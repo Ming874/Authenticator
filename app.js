@@ -11,6 +11,7 @@ const App = {
         db: null,
         credentialId: localStorage.getItem('auth_credential_id'),
         touchStart: 0,
+        touchStartY: 0,
         activeSwipedCard: null
     },
 
@@ -195,33 +196,41 @@ const App = {
             // Swipe Logic
             card.addEventListener('touchstart', (e) => {
                 this.state.touchStart = e.touches[0].clientX;
+                this.state.touchStartY = e.touches[0].clientY;
             }, { passive: true });
 
             card.addEventListener('touchend', (e) => {
                 const touchEnd = e.changedTouches[0].clientX;
-                const diff = this.state.touchStart - touchEnd;
+                const touchEndY = e.changedTouches[0].clientY;
+                const diffX = this.state.touchStart - touchEnd;
+                const diffY = this.state.touchStartY - touchEndY;
 
-                if (diff > 40) { // Swipe left
-                    if (this.state.activeSwipedCard) this.state.activeSwipedCard.classList.remove('swiped');
-                    card.classList.add('swiped');
-                    this.state.activeSwipedCard = card;
-                } else if (diff < -40) { // Swipe right
-                    card.classList.remove('swiped');
-                    this.state.activeSwipedCard = null;
-                } else if (Math.abs(diff) < 10) { // Click
+                // 只有當水平滑動距離大於垂直滑動，且超過門檻時才觸發
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
+                    if (diffX > 0) { // Swipe left
+                        if (this.state.activeSwipedCard && this.state.activeSwipedCard !== card) {
+                            this.state.activeSwipedCard.classList.remove('swiped');
+                        }
+                        card.classList.add('swiped');
+                        this.state.activeSwipedCard = card;
+                    } else { // Swipe right
+                        card.classList.remove('swiped');
+                        if (this.state.activeSwipedCard === card) this.state.activeSwipedCard = null;
+                    }
+                } else if (Math.abs(diffX) < 10 && Math.abs(diffY) < 10) { // Click
                     if (card.classList.contains('swiped')) {
                         card.classList.remove('swiped');
                         this.state.activeSwipedCard = null;
                     } else {
                         navigator.clipboard.writeText(code);
-                        this.showToast("Copied to clipboard");
+                        // 移除 showToast 呼叫
                     }
                 }
             });
 
             container.appendChild(wrapper);
         }
-        this.updateProgressBar(); // 初始渲染後立即更新一次進度條
+        this.updateProgressBar();
     },
 
     openEditModal(id, currentLabel) {
@@ -248,7 +257,6 @@ const App = {
                     const acc = this.state.accounts.find(a => a.id === id);
                     if (acc) acc.label = newLabel;
                     this.renderList();
-                    this.showToast("Account updated");
                     this.closeEditModal();
                 };
             }
@@ -293,7 +301,7 @@ const App = {
     },
 
     updateProgressBar() {
-        const p = (30 - (new Date().getSeconds() % 30)) / 30;
+        const p = (30 - ((Date.now() / 1000) % 30)) / 30;
         document.querySelectorAll('.progress-fill').forEach(el => el.style.transform = `scaleX(${p})`);
     },
 
@@ -301,7 +309,13 @@ const App = {
         setInterval(() => {
             if (!this.state.isLocked) {
                 this.updateProgressBar();
-                if (new Date().getSeconds() % 30 === 0) this.renderList();
+                // 在每 30 秒週期開始時重新渲染列表以更新代碼
+                if (Math.floor(Date.now() / 1000) % 30 === 0 && !this._lastTickRendered) {
+                    this.renderList();
+                    this._lastTickRendered = true;
+                } else if (Math.floor(Date.now() / 1000) % 30 !== 0) {
+                    this._lastTickRendered = false;
+                }
             }
         }, 200);
     }
