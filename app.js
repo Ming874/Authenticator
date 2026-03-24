@@ -9,8 +9,9 @@ const App = {
         accounts: [],
         masterKey: null,
         db: null,
-        scanning: false,
-        credentialId: localStorage.getItem('auth_credential_id') // Check if setup is done
+        credentialId: localStorage.getItem('auth_credential_id'),
+        touchStart: 0,
+        activeSwipedCard: null
     },
 
     async init() {
@@ -22,27 +23,10 @@ const App = {
 
     registerServiceWorker() {
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js')
-                .then(reg => {
-                    reg.onupdatefound = () => {
-                        const installingWorker = reg.installing;
-                        installingWorker.onstatechange = () => {
-                            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                // New content is available; skipWaiting is called in sw.js
-                                // The controllerchange event will handle the reload
-                            }
-                        };
-                    };
-                })
-                .catch(err => console.error('SW registration failed:', err));
-
-            // Reload the page when a new service worker takes over
+            navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW failed:', err));
             let refreshing = false;
             navigator.serviceWorker.addEventListener('controllerchange', () => {
-                if (!refreshing) {
-                    refreshing = true;
-                    window.location.reload();
-                }
+                if (!refreshing) { refreshing = true; window.location.reload(); }
             });
         }
     },
@@ -52,14 +36,9 @@ const App = {
             const request = indexedDB.open("AuthenticatorDB", 1);
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
-                if (!db.objectStoreNames.contains("vault")) {
-                    db.createObjectStore("vault", { keyPath: "id" });
-                }
+                if (!db.objectStoreNames.contains("vault")) db.createObjectStore("vault", { keyPath: "id" });
             };
-            request.onsuccess = (e) => {
-                this.state.db = e.target.result;
-                resolve();
-            };
+            request.onsuccess = (e) => { this.state.db = e.target.result; resolve(); };
         });
     },
 
@@ -70,46 +49,39 @@ const App = {
         });
         document.getElementById('cancel-manual').addEventListener('click', () => this.closeManualModal());
         document.getElementById('save-manual').addEventListener('click', () => this.saveManualAccount());
-        document.getElementById('scan-btn').addEventListener('click', () => this.startScan());
-        document.getElementById('close-scan').addEventListener('click', () => this.stopScan());
+        document.getElementById('cancel-edit').addEventListener('click', () => this.closeEditModal());
+        document.getElementById('save-edit').addEventListener('click', () => this.saveEdit());
+
+        // Global click to reset swiped cards
+        document.addEventListener('touchstart', (e) => {
+            if (this.state.activeSwipedCard && !e.target.closest('.otp-card-wrapper')) {
+                this.state.activeSwipedCard.classList.remove('swiped');
+                this.state.activeSwipedCard = null;
+            }
+        });
     },
 
-    // --- WebAuthn (Biometric/Device Auth) ---
+    // --- Auth Logic ---
     async handleUnlock() {
         try {
-            if (!this.state.credentialId) {
-                // First time: Register device
-                await this.registerDevice();
-            } else {
-                // Subsequent: Authenticate
-                await this.verifyDevice();
-            }
+            if (!this.state.credentialId) await this.registerDevice();
+            else await this.verifyDevice();
             await this.unlockVault();
-        } catch (err) {
-            console.error(err);
-            alert("Authentication failed: " + err.message);
-        }
+        } catch (err) { alert("Authentication failed"); }
     },
 
     async registerDevice() {
         const challenge = window.crypto.getRandomValues(new Uint8Array(32));
         const userID = window.crypto.getRandomValues(new Uint8Array(16));
-        
         const publicKey = {
             challenge,
             rp: { name: "Secure Authenticator" },
-            user: {
-                id: userID,
-                name: "user@local",
-                displayName: "Local User"
-            },
+            user: { id: userID, name: "user@local", displayName: "Local User" },
             pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
             authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
             timeout: 60000
         };
-
         const credential = await navigator.credentials.create({ publicKey });
-        // Store ID as string for later lookup
         const idBase64 = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
         localStorage.setItem('auth_credential_id', idBase64);
         this.state.credentialId = idBase64;
@@ -118,28 +90,15 @@ const App = {
     async verifyDevice() {
         const challenge = window.crypto.getRandomValues(new Uint8Array(32));
         const rawId = Uint8Array.from(atob(this.state.credentialId), c => c.charCodeAt(0));
-
-        const publicKey = {
-            challenge,
-            allowCredentials: [{
-                id: rawId,
-                type: 'public-key'
-            }],
-            userVerification: "required",
-            timeout: 60000
-        };
-
+        const publicKey = { challenge, allowCredentials: [{ id: rawId, type: 'public-key' }], userVerification: "required", timeout: 60000 };
         await navigator.credentials.get({ publicKey });
-        // If it doesn't throw, hardware auth succeeded
     },
 
     // --- Vault & Encryption ---
     async getMasterKey() {
         if (this.state.masterKey) return this.state.masterKey;
         const enc = new TextEncoder();
-        const baseKey = await window.crypto.subtle.importKey(
-            "raw", enc.encode("user-session-entropy-v2"), "PBKDF2", false, ["deriveKey"]
-        );
+        const baseKey = await window.crypto.subtle.importKey("raw", enc.encode("user-session-entropy-v2"), "PBKDF2", false, ["deriveKey"]);
         this.state.masterKey = await window.crypto.subtle.deriveKey(
             { name: "PBKDF2", salt: enc.encode("secure-salt-v2"), iterations: 100000, hash: "SHA-256" },
             baseKey, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
@@ -150,31 +109,26 @@ const App = {
     async encrypt(text) {
         const key = await this.getMasterKey();
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const encrypted = await window.crypto.subtle.encrypt(
-            { name: "AES-GCM", iv }, key, new TextEncoder().encode(text)
-        );
+        const encrypted = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text));
         return { encrypted, iv };
     },
 
     async decrypt(encrypted, iv) {
         const key = await this.getMasterKey();
-        const decrypted = await window.crypto.subtle.decrypt(
-            { name: "AES-GCM", iv }, key, encrypted
-        );
+        const decrypted = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, encrypted);
         return new TextDecoder().decode(decrypted);
     },
 
     async unlockVault() {
         const tx = this.state.db.transaction("vault", "readonly");
-        const store = tx.objectStore("vault");
-        const request = store.getAll();
+        const request = tx.objectStore("vault").getAll();
         request.onsuccess = async () => {
             const results = [];
             for (const item of request.result) {
                 try {
                     const secret = await this.decrypt(item.encrypted, item.iv);
                     results.push({ id: item.id, label: item.label, secret });
-                } catch (e) { console.warn("Decryption failed for an item"); }
+                } catch (e) {}
             }
             this.state.accounts = results;
             this.state.isLocked = false;
@@ -190,82 +144,109 @@ const App = {
         const tx = this.state.db.transaction("vault", "readwrite");
         tx.objectStore("vault").add(entry);
         tx.oncomplete = () => {
-            if (!this.state.isLocked) {
-                this.state.accounts.push({ id: entry.id, label, secret });
-                this.renderList();
-            }
+            if (!this.state.isLocked) { this.state.accounts.push({ id: entry.id, label, secret }); this.renderList(); }
         };
     },
 
     saveManualAccount() {
         const label = document.getElementById('manual-label').value.trim();
         const secret = document.getElementById('manual-secret').value.trim().replace(/\s/g, '').toUpperCase();
-        if (!label || !secret || !/^[A-Z2-7]+=*$/.test(secret)) {
-            alert("Invalid input format"); return;
-        }
+        if (!label || !secret || !/^[A-Z2-7]+=*$/.test(secret)) { alert("Invalid input"); return; }
         this.saveAccount(label, secret);
         this.closeManualModal();
     },
 
-    // --- QR Scanner ---
-    async startScan() {
-        const video = document.getElementById('video');
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            video.srcObject = stream;
-            video.play();
-            document.getElementById('scanner-overlay').classList.remove('hidden');
-            this.state.scanning = true;
-            requestAnimationFrame(() => this.scanTick());
-        } catch (err) { alert("Camera access denied"); }
-    },
-
-    stopScan() {
-        const video = document.getElementById('video');
-        if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
-        document.getElementById('scanner-overlay').classList.add('hidden');
-        this.state.scanning = false;
-    },
-
-    scanTick() {
-        if (!this.state.scanning) return;
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            canvas.height = video.videoHeight;
-            canvas.width = video.videoWidth;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const code = jsQR(ctx.getImageData(0,0,canvas.width,canvas.height).data, canvas.width, canvas.height);
-            if (code) { this.handleURL(code.data); this.stopScan(); return; }
-        }
-        requestAnimationFrame(() => this.scanTick());
-    },
-
-    handleURL(urlStr) {
-        try {
-            const url = new URL(urlStr);
-            const secret = url.searchParams.get("secret");
-            const issuer = url.searchParams.get("issuer") || "Local";
-            const label = decodeURIComponent(url.pathname.split(':').pop());
-            if (secret) this.saveAccount(`${issuer}: ${label}`, secret.toUpperCase());
-        } catch (e) { alert("Invalid QR Code"); }
-    },
-
-    // --- TOTP & UI ---
+    // --- Swipe & Edit ---
     async renderList() {
         const container = document.getElementById('otp-list');
         container.innerHTML = '';
+
+        if (this.state.accounts.length > 0) {
+            const hint = document.createElement('div');
+            hint.className = 'swipe-hint';
+            hint.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg> Swipe left on card to edit name`;
+            container.appendChild(hint);
+        }
+
         for (const acc of this.state.accounts) {
             const code = await this.generateTOTP(acc.secret);
-            const card = document.createElement('div');
-            card.className = 'otp-card';
-            card.innerHTML = `<div class="otp-label">${acc.label}</div><div class="otp-code">${code.substring(0,3)} ${code.substring(3)}</div><div class="progress-track"><div class="progress-fill"></div></div>`;
-            card.onclick = () => { navigator.clipboard.writeText(code); this.showToast("Copied"); };
-            container.appendChild(card);
+            const wrapper = document.createElement('div');
+            wrapper.className = 'otp-card-wrapper';
+            
+            wrapper.innerHTML = `
+                <div class="otp-card-action" onclick="App.openEditModal(${acc.id}, '${acc.label.replace(/'/g, "\\'")}')">Edit</div>
+                <div class="otp-card" id="card-${acc.id}">
+                    <div class="otp-label">${acc.label}</div>
+                    <div class="otp-code">${code.substring(0,3)} ${code.substring(3)}</div>
+                    <div class="progress-track"><div class="progress-fill"></div></div>
+                </div>
+            `;
+
+            const card = wrapper.querySelector('.otp-card');
+            
+            // Swipe Logic
+            card.addEventListener('touchstart', (e) => {
+                this.state.touchStart = e.touches[0].clientX;
+            }, { passive: true });
+
+            card.addEventListener('touchend', (e) => {
+                const touchEnd = e.changedTouches[0].clientX;
+                const diff = this.state.touchStart - touchEnd;
+
+                if (diff > 50) { // Swipe left
+                    if (this.state.activeSwipedCard) this.state.activeSwipedCard.classList.remove('swiped');
+                    card.classList.add('swiped');
+                    this.state.activeSwipedCard = card;
+                } else if (diff < -50) { // Swipe right
+                    card.classList.remove('swiped');
+                    this.state.activeSwipedCard = null;
+                } else if (Math.abs(diff) < 10) { // Click
+                    if (card.classList.contains('swiped')) {
+                        card.classList.remove('swiped');
+                        this.state.activeSwipedCard = null;
+                    } else {
+                        navigator.clipboard.writeText(code);
+                        this.showToast("Copied to clipboard");
+                    }
+                }
+            });
+
+            container.appendChild(wrapper);
         }
     },
 
+    openEditModal(id, currentLabel) {
+        document.getElementById('edit-id').value = id;
+        document.getElementById('edit-label').value = currentLabel;
+        document.getElementById('edit-overlay').classList.remove('hidden');
+    },
+
+    closeEditModal() { document.getElementById('edit-overlay').classList.add('hidden'); },
+
+    async saveEdit() {
+        const id = parseInt(document.getElementById('edit-id').value);
+        const newLabel = document.getElementById('edit-label').value.trim();
+        if (!newLabel) return;
+        const tx = this.state.db.transaction("vault", "readwrite");
+        const store = tx.objectStore("vault");
+        const request = store.get(id);
+        request.onsuccess = () => {
+            const data = request.result;
+            if (data) {
+                data.label = newLabel;
+                store.put(data);
+                tx.oncomplete = () => {
+                    const acc = this.state.accounts.find(a => a.id === id);
+                    if (acc) acc.label = newLabel;
+                    this.renderList();
+                    this.showToast("Account updated");
+                    this.closeEditModal();
+                };
+            }
+        };
+    },
+
+    // --- TOTP Utils ---
     base32ToBuf(s) {
         const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
         let b = "", r = [];
@@ -296,7 +277,11 @@ const App = {
         setTimeout(() => t.remove(), 2000);
     },
 
-    closeManualModal() { document.getElementById('manual-overlay').classList.add('hidden'); },
+    closeManualModal() { 
+        document.getElementById('manual-overlay').classList.add('hidden'); 
+        document.getElementById('manual-label').value = '';
+        document.getElementById('manual-secret').value = '';
+    },
 
     startTimer() {
         setInterval(() => {

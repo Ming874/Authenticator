@@ -1,62 +1,46 @@
-# Secure Vault: Offline Biometric Authenticator
+# Secure Authenticator
 
-A high-security, privacy-first, and fully offline Web-based TOTP (Time-based One-Time Password) authenticator. This project implements a secure alternative to Google Authenticator that runs entirely in the browser using modern Web APIs.
+A professional-grade, high-security, and entirely client-side TOTP (Time-based One-Time Password) authenticator. Designed with a privacy-first philosophy, this application provides a seamless and secure experience for managing two-factor authentication (2FA) codes without relying on cloud services.
 
-## 1. Core Architecture & Technical Principles
+## Security Architecture
 
-### 1.1 TOTP Algorithm (RFC 6238)
-The core generation logic follows the standard TOTP protocol:
-1.  **Time Normalization**: Retrieves the current Unix timestamp, divides it by the 30-second step interval, and floors the result to obtain the counter `T`.
-2.  **Secret Decoding**: Decodes the Base32-encoded seed into a raw byte stream `K`.
-3.  **HMAC-SHA1 Computation**: Performs an HMAC-SHA1 hash using `K` as the key and `T` (encoded as an 8-byte big-endian integer) as the message.
-4.  **Dynamic Truncation**: Extracts a 4-byte sequence from the hash based on the last nibble's offset and converts it to a 31-bit integer.
-5.  **Modulo Operation**: Calculates the result modulo 1,000,000 to produce a 6-digit code.
+Secure Authenticator is built on a foundation of modern web security primitives to ensure that your sensitive data remains under your absolute control.
 
-### 1.2 Zero-Knowledge Storage Security
-*   **Encryption Standard**: Employs `AES-256-GCM` for authenticated encryption of all sensitive seeds.
-*   **Key Derivation**: Implements a zero-knowledge architecture where the Master Key is never stored. After successful WebAuthn verification, a symmetric key is derived via `PBKDF2` using a unique salt and hardware-backed entropy.
-*   **Persistence**: Utilizes `IndexedDB` for localized storage of `{ id, label, encrypted_seed, iv, salt }`.
+- **Hardware-Level Protection**: Leverages the **WebAuthn API** to gate access through device-native biometrics (FaceID, TouchID, or Android Biometrics). Your vault is only accessible after successful local authentication.
+- **End-to-End Client-Side Encryption**: All TOTP secrets are encrypted using **AES-256-GCM** before being persisted. Encryption keys are never stored; they are derived at runtime using **PBKDF2** with a unique salt and high iteration counts.
+- **Data Isolation**: Adheres to a strict **Content Security Policy (CSP)**. By setting `connect-src 'none'`, the application is mathematically incapable of transmitting your data to any external server.
+- **Zero Cloud Footprint**: All account data is stored locally in the browser's **IndexedDB**. There are no accounts to create, no servers to trust, and no data to sync to the cloud.
 
----
+## Key Features
 
-## 2. Implementation Framework
+- **PWA Excellence**: Fully compliant Progressive Web App. Installable on iOS, Android, and Desktop, providing a native-like experience with full offline functionality.
+- **Intuitive Gesture-Based UX**:
+    - **Swipe-to-Edit**: Effortlessly manage account labels with a natural left-swipe gesture on any card.
+    - **One-Tap Copy**: Instantly copy your 6-digit code to the clipboard with a single tap.
+- **Dynamic Viewport Optimization**: Utilizes modern CSS units (`100dvh`) to ensure a perfect, scroll-free interface across all mobile browsers and device orientations.
+- **Precision TOTP Engine**: Real-time 30-second countdown with high-fidelity progress animations (30fps), ensuring you always know exactly when your code will rotate.
+- **Minimalist Aesthetic**: Built with the "Inter" typeface and a clean, card-based UI that prioritizes readability and professional utility.
 
-### UI/UX & Responsive Design
-*   **Stack**: Native HTML5, CSS3 (Grid & Flexbox).
-*   **Visual States**: 
-    *   **Lock Screen**: Minimalist biometric authentication interface.
-    *   **Vault View**: Card-based layout with real-time TOTP generation and synchronized progress indicators.
-*   **Interaction**: Integrated "One-tap Copy" functionality via the Clipboard API.
+## Getting Started
 
-### Cryptographic Engine
-*   **Web Crypto API**: Leveraging `window.crypto.subtle` for high-performance, hardware-accelerated HMAC and AES operations.
-*   **Base32 Implementation**: A custom, lightweight decoder for transforming industry-standard secrets into byte arrays.
+1. **Deployment**: Host the static files on any HTTPS-enabled server.
+2. **Setup**: Access the URL and follow the system prompt to register your device's biometric sensor.
+3. **Management**:
+    - Use the **Add (+)** button to manually input your Service Name and Base32 Secret Key.
+    - **Swipe Left** on any card to reveal the Edit action for quick renaming.
+    - **Tap** a card to copy the code.
 
-### Biometric Integration (WebAuthn)
-*   **Hardware-Backed Security**: Uses `navigator.credentials` to interface with system-level authenticators (Touch ID, Face ID, Windows Hello).
-*   **State Management**: Cryptographic keys are held only in volatile memory and are purged upon session termination or manual lock.
+## Technical Stack
 
-### QR Code Scanning
-*   **Camera Integration**: Utilizes `navigator.mediaDevices.getUserMedia` for real-time video streaming.
-*   **Edge Processing**: Integrates `jsQR` for client-side barcode decoding, ensuring no image data is transmitted over the network.
+- **Core**: Vanilla TypeScript/JavaScript (ES6+), Web Crypto API.
+- **Storage**: IndexedDB (Encrypted persistence).
+- **Security**: WebAuthn API, Web Cryptography API (SubtleCrypto).
+- **Service Layer**: Service Worker for PWA lifecycle and offline caching.
+- **UI/UX**: HTML5 Semantic Markup, CSS3 Custom Properties, Dynamic Viewport Handling.
 
-### Progressive Web App (PWA)
-*   **Service Worker**: Implements an aggressive caching strategy for 100% offline availability.
-*   **Update Lifecycle**: Advanced service worker management to ensure seamless background updates and immediate activation.
+## Important Security Notice
+
+This application is a **Zero-Cloud** solution. Your data resides **exclusively** within your browser's local storage. Clearing your browser cache or losing your device will result in the permanent loss of your 2FA secrets. **Always maintain physical backups (Recovery Codes) for all services secured by this app.**
 
 ---
-
-## 3. Security Evaluation
-| Threat Vector | Mitigation Strategy |
-| :--- | :--- |
-| **XSS Attacks** | Strict Content Security Policy (CSP) prohibiting inline scripts and external domain requests. |
-| **Physical Theft** | All data in IndexedDB is AES-GCM encrypted; decryption requires biometric hardware verification. |
-| **Data Leakage** | Zero-Knowledge architecture ensures seeds never leave the local device environment. |
-
----
-
-## 4. Key Deliverables
-*   **Autonomous Operation**: Zero external dependencies or API calls during runtime.
-*   **Biometric Speed**: Near-instant vault access via native device authentication.
-*   **Visual Precision**: Synchronized countdown timers with smooth 60fps UI updates.
-*   **Privacy Centric**: Full compliance with "Privacy by Design" principles.
+Created by [Ming Chen](https://mingchen.dev)
