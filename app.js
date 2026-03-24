@@ -58,7 +58,7 @@ const App = {
                 this.state.activeSwipedCard.classList.remove('swiped');
                 this.state.activeSwipedCard = null;
             }
-        });
+        }, { passive: true });
     },
 
     // --- Auth Logic ---
@@ -164,7 +164,7 @@ const App = {
         if (this.state.accounts.length > 0) {
             const hint = document.createElement('div');
             hint.className = 'swipe-hint';
-            hint.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg> Swipe left on card to edit name`;
+            hint.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg> Swipe left to edit`;
             container.appendChild(hint);
         }
 
@@ -174,7 +174,7 @@ const App = {
             wrapper.className = 'otp-card-wrapper';
             
             wrapper.innerHTML = `
-                <div class="otp-card-action" onclick="App.openEditModal(${acc.id}, '${acc.label.replace(/'/g, "\\'")}')">Edit</div>
+                <div class="otp-card-action">Edit</div>
                 <div class="otp-card" id="card-${acc.id}">
                     <div class="otp-label">${acc.label}</div>
                     <div class="otp-code">${code.substring(0,3)} ${code.substring(3)}</div>
@@ -183,7 +183,15 @@ const App = {
             `;
 
             const card = wrapper.querySelector('.otp-card');
+            const action = wrapper.querySelector('.otp-card-action');
             
+            // Edit Button Click
+            action.onclick = () => {
+                this.openEditModal(acc.id, acc.label);
+                card.classList.remove('swiped');
+                this.state.activeSwipedCard = null;
+            };
+
             // Swipe Logic
             card.addEventListener('touchstart', (e) => {
                 this.state.touchStart = e.touches[0].clientX;
@@ -193,11 +201,11 @@ const App = {
                 const touchEnd = e.changedTouches[0].clientX;
                 const diff = this.state.touchStart - touchEnd;
 
-                if (diff > 50) { // Swipe left
+                if (diff > 40) { // Swipe left
                     if (this.state.activeSwipedCard) this.state.activeSwipedCard.classList.remove('swiped');
                     card.classList.add('swiped');
                     this.state.activeSwipedCard = card;
-                } else if (diff < -50) { // Swipe right
+                } else if (diff < -40) { // Swipe right
                     card.classList.remove('swiped');
                     this.state.activeSwipedCard = null;
                 } else if (Math.abs(diff) < 10) { // Click
@@ -213,6 +221,7 @@ const App = {
 
             container.appendChild(wrapper);
         }
+        this.updateProgressBar(); // 初始渲染後立即更新一次進度條
     },
 
     openEditModal(id, currentLabel) {
@@ -283,14 +292,18 @@ const App = {
         document.getElementById('manual-secret').value = '';
     },
 
+    updateProgressBar() {
+        const p = (30 - (new Date().getSeconds() % 30)) / 30;
+        document.querySelectorAll('.progress-fill').forEach(el => el.style.transform = `scaleX(${p})`);
+    },
+
     startTimer() {
         setInterval(() => {
             if (!this.state.isLocked) {
-                const p = (30 - (new Date().getSeconds() % 30)) / 30;
-                document.querySelectorAll('.progress-fill').forEach(el => el.style.transform = `scaleX(${p})`);
+                this.updateProgressBar();
                 if (new Date().getSeconds() % 30 === 0) this.renderList();
             }
-        }, 1000);
+        }, 200);
     }
 };
 
