@@ -1,6 +1,5 @@
 /**
  * Secure Authenticator - Core Logic
- * WebAuthn (Biometrics) | AES-GCM | IndexedDB | TOTP
  */
 
 const App = {
@@ -9,10 +8,7 @@ const App = {
         accounts: [],
         masterKey: null,
         db: null,
-        credentialId: localStorage.getItem('auth_credential_id'),
-        touchStart: 0,
-        touchStartY: 0,
-        activeSwipedCard: null
+        credentialId: localStorage.getItem('auth_credential_id')
     },
 
     async init() {
@@ -25,10 +21,6 @@ const App = {
     registerServiceWorker() {
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW failed:', err));
-            let refreshing = false;
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                if (!refreshing) { refreshing = true; window.location.reload(); }
-            });
         }
     },
 
@@ -50,16 +42,6 @@ const App = {
         });
         document.getElementById('cancel-manual').addEventListener('click', () => this.closeManualModal());
         document.getElementById('save-manual').addEventListener('click', () => this.saveManualAccount());
-        document.getElementById('cancel-edit').addEventListener('click', () => this.closeEditModal());
-        document.getElementById('save-edit').addEventListener('click', () => this.saveEdit());
-
-        // Global click to reset swiped cards
-        document.addEventListener('touchstart', (e) => {
-            if (this.state.activeSwipedCard && !e.target.closest('.otp-card-wrapper')) {
-                this.state.activeSwipedCard.classList.remove('swiped');
-                this.state.activeSwipedCard = null;
-            }
-        }, { passive: true });
     },
 
     // --- Auth Logic ---
@@ -157,110 +139,28 @@ const App = {
         this.closeManualModal();
     },
 
-    // --- Swipe & Edit ---
+    // --- Render ---
     async renderList() {
         const container = document.getElementById('otp-list');
         container.innerHTML = '';
 
-        if (this.state.accounts.length > 0) {
-            const hint = document.createElement('div');
-            hint.className = 'swipe-hint';
-            hint.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg> Swipe left to edit`;
-            container.appendChild(hint);
-        }
-
         for (const acc of this.state.accounts) {
             const code = await this.generateTOTP(acc.secret);
-            const wrapper = document.createElement('div');
-            wrapper.className = 'otp-card-wrapper';
-            
-            wrapper.innerHTML = `
-                <div class="otp-card-action">Edit</div>
-                <div class="otp-card" id="card-${acc.id}">
-                    <div class="otp-label">${acc.label}</div>
-                    <div class="otp-code">${code.substring(0,3)} ${code.substring(3)}</div>
-                    <div class="progress-track"><div class="progress-fill"></div></div>
-                </div>
+            const card = document.createElement('div');
+            card.className = 'otp-card';
+            card.innerHTML = `
+                <div class="otp-label">${acc.label}</div>
+                <div class="otp-code">${code.substring(0,3)} ${code.substring(3)}</div>
+                <div class="progress-track"><div class="progress-fill"></div></div>
             `;
 
-            const card = wrapper.querySelector('.otp-card');
-            const action = wrapper.querySelector('.otp-card-action');
-            
-            // Edit Button Click
-            action.onclick = () => {
-                this.openEditModal(acc.id, acc.label);
-                card.classList.remove('swiped');
-                this.state.activeSwipedCard = null;
+            card.onclick = () => {
+                navigator.clipboard.writeText(code);
             };
 
-            // Swipe Logic
-            card.addEventListener('touchstart', (e) => {
-                this.state.touchStart = e.touches[0].clientX;
-                this.state.touchStartY = e.touches[0].clientY;
-            }, { passive: true });
-
-            card.addEventListener('touchend', (e) => {
-                const touchEnd = e.changedTouches[0].clientX;
-                const touchEndY = e.changedTouches[0].clientY;
-                const diffX = this.state.touchStart - touchEnd;
-                const diffY = this.state.touchStartY - touchEndY;
-
-                // 只有當水平滑動距離大於垂直滑動，且超過門檻時才觸發
-                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
-                    if (diffX > 0) { // Swipe left
-                        if (this.state.activeSwipedCard && this.state.activeSwipedCard !== card) {
-                            this.state.activeSwipedCard.classList.remove('swiped');
-                        }
-                        card.classList.add('swiped');
-                        this.state.activeSwipedCard = card;
-                    } else { // Swipe right
-                        card.classList.remove('swiped');
-                        if (this.state.activeSwipedCard === card) this.state.activeSwipedCard = null;
-                    }
-                } else if (Math.abs(diffX) < 10 && Math.abs(diffY) < 10) { // Click
-                    if (card.classList.contains('swiped')) {
-                        card.classList.remove('swiped');
-                        this.state.activeSwipedCard = null;
-                    } else {
-                        navigator.clipboard.writeText(code);
-                        // 移除 showToast 呼叫
-                    }
-                }
-            });
-
-            container.appendChild(wrapper);
+            container.appendChild(card);
         }
         this.updateProgressBar();
-    },
-
-    openEditModal(id, currentLabel) {
-        document.getElementById('edit-id').value = id;
-        document.getElementById('edit-label').value = currentLabel;
-        document.getElementById('edit-overlay').classList.remove('hidden');
-    },
-
-    closeEditModal() { document.getElementById('edit-overlay').classList.add('hidden'); },
-
-    async saveEdit() {
-        const id = parseInt(document.getElementById('edit-id').value);
-        const newLabel = document.getElementById('edit-label').value.trim();
-        if (!newLabel) return;
-        const tx = this.state.db.transaction("vault", "readwrite");
-        const store = tx.objectStore("vault");
-        const request = store.get(id);
-        request.onsuccess = () => {
-            const data = request.result;
-            if (data) {
-                data.label = newLabel;
-                store.put(data);
-                tx.oncomplete = () => {
-                    const acc = this.state.accounts.find(a => a.id === id);
-                    if (acc) acc.label = newLabel;
-                    this.renderList();
-                    this.closeEditModal();
-                };
-            }
-        };
     },
 
     // --- TOTP Utils ---
@@ -287,13 +187,6 @@ const App = {
         return (c%1000000).toString().padStart(6, '0');
     },
 
-    showToast(m) {
-        const t = document.createElement('div');
-        t.className = "toast"; t.innerText = m;
-        document.body.appendChild(t);
-        setTimeout(() => t.remove(), 2000);
-    },
-
     closeManualModal() { 
         document.getElementById('manual-overlay').classList.add('hidden'); 
         document.getElementById('manual-label').value = '';
@@ -309,7 +202,6 @@ const App = {
         setInterval(() => {
             if (!this.state.isLocked) {
                 this.updateProgressBar();
-                // 在每 30 秒週期開始時重新渲染列表以更新代碼
                 if (Math.floor(Date.now() / 1000) % 30 === 0 && !this._lastTickRendered) {
                     this.renderList();
                     this._lastTickRendered = true;
