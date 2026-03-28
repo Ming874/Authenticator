@@ -69,18 +69,13 @@ header h1 {
     padding-bottom: 20px;
 }
 
-/* 簡單的卡片樣式，移除左滑邏輯 */
-.otp-card-wrapper {
-    margin-bottom: 16px;
-    border-radius: 20px;
-    overflow: hidden;
-}
-
+/* 簡單的卡片樣式 */
 .otp-card {
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: 20px;
     padding: 24px;
+    margin-bottom: 16px;
     position: relative;
     cursor: pointer;
     box-shadow: var(--shadow-sm);
