@@ -47,10 +47,22 @@ const App = {
     // --- Auth Logic ---
     async handleUnlock() {
         try {
+            if (!window.PublicKeyCredential) {
+                throw new Error("Biometrics not supported in this browser.");
+            }
             if (!this.state.credentialId) await this.registerDevice();
             else await this.verifyDevice();
             await this.unlockVault();
-        } catch (err) { alert("Authentication failed"); }
+        } catch (err) { 
+            console.error("Auth error:", err);
+            let msg = "Authentication failed.";
+            if (err.name === 'NotAllowedError') {
+                msg = "Permission denied or browser blocked. If you are using Brave, please check your Shields settings (Block fingerprinting).";
+            } else if (err.name === 'SecurityError') {
+                msg = "Security error. Please ensure you're accessing via HTTPS and your browser allows WebAuthn.";
+            }
+            alert(msg);
+        }
     },
 
     async registerDevice() {

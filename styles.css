@@ -85,6 +85,7 @@ header h1 {
     cursor: pointer;
     box-shadow: var(--shadow-sm);
     transition: background 0.2s;
+    overflow: hidden;
 }
 
 .otp-card:active {

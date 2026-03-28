@@ -1,4 +1,4 @@
-const CACHE_NAME = 'auth-v2';
+const CACHE_NAME = 'auth-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -8,7 +8,7 @@ const ASSETS = [
   'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js'
 ];
 
-// Install Event - Pre-cache assets and skip waiting
+// Install Event - Pre-cache assets
 self.addEventListener('install', (e) => {
   self.skipWaiting();
   e.waitUntil(
@@ -16,7 +16,7 @@ self.addEventListener('install', (e) => {
   );
 });
 
-// Activate Event - Clean up old caches and claim clients
+// Activate Event - Clean up old caches
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     Promise.all([
@@ -30,9 +30,24 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Fetch Event - Cache first strategy
+// Fetch Event - Network First Strategy for better Brave compatibility
 self.addEventListener('fetch', (e) => {
+  // Only handle GET requests
+  if (e.request.method !== 'GET') return;
+
   e.respondWith(
-    caches.match(e.request).then(response => response || fetch(e.request))
+    fetch(e.request)
+      .then(response => {
+        // If success, clone and update cache
+        const resClone = response.clone();
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(e.request, resClone);
+        });
+        return response;
+      })
+      .catch(() => {
+        // If network fails, try cache
+        return caches.match(e.request);
+      })
   );
 });
