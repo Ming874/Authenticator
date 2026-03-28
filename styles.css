@@ -37,6 +37,18 @@ body {
     display: flex;
     flex-direction: column;
     background-color: var(--bg-surface);
+    position: relative;
+}
+
+#auth-screen {
+    justify-content: center;
+    align-items: center;
+}
+
+#auth-screen .icon-btn {
+    position: absolute;
+    top: 24px;
+    left: 24px;
 }
 
 /* Header Alignment */
