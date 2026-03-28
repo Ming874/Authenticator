@@ -45,6 +45,15 @@ body {
     align-items: center;
 }
 
+.auth-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 320px;
+    margin-top: 40px;
+}
+
 #auth-screen .icon-btn {
     position: absolute;
     top: 24px;
@@ -79,6 +88,13 @@ header h1 {
     flex: 1;
     overflow-y: auto;
     padding-bottom: 20px;
+    /* 隱藏滾動條但保持滾動功能 */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+}
+
+.otp-container::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
 }
 
 /* 簡單的卡片樣式 */
