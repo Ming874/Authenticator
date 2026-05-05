@@ -84,6 +84,12 @@ header h1 {
 
 .header-actions { display: flex; gap: 12px; }
 
+.icon-btn.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
 .otp-container {
     flex: 1;
     overflow-y: auto;
@@ -107,12 +113,55 @@ header h1 {
     position: relative;
     cursor: pointer;
     box-shadow: var(--shadow-sm);
-    transition: background 0.2s;
+    transition: background 0.2s, transform 0.2s;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 16px;
 }
 
 .otp-card:active {
     background: var(--bg-main);
+    transform: scale(0.98);
+}
+
+.otp-info {
+    flex: 1;
+    min-width: 0; /* Important for text truncation if needed */
+}
+
+.delete-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s;
+}
+
+.otp-card.editing .delete-action {
+    width: 44px;
+    opacity: 1;
+}
+
+.btn-delete {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: #fee2e2;
+    color: #ef4444;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+}
+
+.btn-delete:active {
+    transform: scale(0.9);
+    background: #fecaca;
 }
 
 .progress-track {

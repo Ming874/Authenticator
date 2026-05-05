@@ -5,6 +5,7 @@
 const App = {
     state: {
         isLocked: true,
+        isEditing: false,
         accounts: [],
         masterKey: null,
         db: null,
@@ -39,6 +40,11 @@ const App = {
         document.getElementById('unlock-btn').addEventListener('click', () => this.handleUnlock());
         document.getElementById('add-manual-btn').addEventListener('click', () => {
             document.getElementById('manual-overlay').classList.remove('hidden');
+        });
+        document.getElementById('manage-btn').addEventListener('click', () => {
+            this.state.isEditing = !this.state.isEditing;
+            document.getElementById('manage-btn').classList.toggle('active', this.state.isEditing);
+            this.renderList();
         });
         document.getElementById('cancel-manual').addEventListener('click', () => this.closeManualModal());
         document.getElementById('save-manual').addEventListener('click', () => this.saveManualAccount());
@@ -151,6 +157,15 @@ const App = {
         this.closeManualModal();
     },
 
+    async deleteAccount(id) {
+        const tx = this.state.db.transaction("vault", "readwrite");
+        tx.objectStore("vault").delete(id);
+        tx.oncomplete = () => {
+            this.state.accounts = this.state.accounts.filter(a => a.id !== id);
+            this.renderList();
+        };
+    },
+
     // --- Render ---
     async renderList() {
         const container = document.getElementById('otp-list');
@@ -159,15 +174,31 @@ const App = {
         for (const acc of this.state.accounts) {
             const code = await this.generateTOTP(acc.secret);
             const card = document.createElement('div');
-            card.className = 'otp-card';
+            card.className = `otp-card ${this.state.isEditing ? 'editing' : ''}`;
             card.innerHTML = `
-                <div class="otp-label">${acc.label}</div>
-                <div class="otp-code">${code.substring(0,3)} ${code.substring(3)}</div>
+                <div class="otp-info">
+                    <div class="otp-label">${acc.label}</div>
+                    <div class="otp-code">${code.substring(0,3)} ${code.substring(3)}</div>
+                </div>
+                <div class="delete-action">
+                    <button class="btn-delete">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                </div>
                 <div class="progress-track"><div class="progress-fill"></div></div>
             `;
 
             card.onclick = () => {
+                if (this.state.isEditing) return;
                 navigator.clipboard.writeText(code);
+            };
+
+            const delBtn = card.querySelector('.btn-delete');
+            delBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (confirm(`Delete ${acc.label}?`)) {
+                    this.deleteAccount(acc.id);
+                }
             };
 
             container.appendChild(card);
